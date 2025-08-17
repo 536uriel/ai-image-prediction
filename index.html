@@ -1,0 +1,294 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>אימון תמונות AI</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      margin: 24px;
+      background: #fafafa;
+      color: #111
+    }
+
+    #wrap {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap
+    }
+
+    .panel {
+      background: #fff;
+      padding: 14px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(20, 20, 40, .06)
+    }
+
+    canvas {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      cursor: crosshair;
+      background: #fff;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    button {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      background: #fff;
+      cursor: pointer
+    }
+
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border: none
+    }
+
+    .prog {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0
+    }
+
+    .bar {
+      height: 10px;
+      width: 200px;
+      background: #eee;
+      border-radius: 8px;
+      overflow: hidden
+    }
+
+    .bar>i {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #5b9cff, #2ec6a7)
+    }
+
+    #log {
+      font-size: 13px;
+      max-height: 280px;
+      overflow: auto;
+      background: #fbfbff;
+      border: 1px solid #eee;
+      padding: 8px;
+      border-radius: 8px
+    }
+
+    code {
+      background: #f1f1f5;
+      padding: 0 4px;
+      border-radius: 4px
+    }
+
+    h3 a {
+      text-decoration: none;
+      color: rgb(138, 130, 243);
+    }
+
+    h3 a:hover{
+      text-decoration: none;
+      color: rgb(174, 169, 243);
+    }
+  </style>
+</head>
+
+<body>
+  <h2 style="color: #5b9cff;">ניחוש ואימון זיהוי תמונה בבינה מלאכותית AI</h2>
+  <h3><a href="https://536uriel.github.io/rpg-maker-v2/">חזרה
+      לאתר תרגול</a></h3>
+
+  <div id="wrap">
+    <div class="panel">
+      <canvas id="canvas" width="220" height="220"></canvas>
+      <div class="controls">
+        <select id="labelSelect"></select>
+        <input type="text" id="labelInput" placeholder="New label..."
+          style="padding:6px; border-radius:8px; border:1px solid #ccc; width:100px;">
+        <button id="addLabelBtn">Add Label</button>
+        <button id="addBtn" class="primary">Add Example</button>
+        <button id="trainBtn">Train</button>
+        <button id="predictBtn">Predict</button>
+        <button id="clearBtn">Clear</button>
+        <button id="saveBtn">Save</button>
+        <button id="loadBtn">Load</button>
+      </div>
+      <div style="margin-top:6px; font-size:13px; color:#555">
+        Labels in dataset: <span id="labelsList">(none)</span><br />
+        Examples: <span id="exampleCount">0</span>
+      </div>
+    </div>
+
+    <div class="panel" style="width:380px;">
+      <div><strong>Prediction</strong></div>
+      <div id="probs"></div>
+      <div style="margin-top:12px;"><strong>Logs</strong></div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    /* ============ Canvas drawing ============ */
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+
+    let drawing = false, last = null;
+    function toCanvasPos(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) }; }
+    canvas.addEventListener('pointerdown', e => { drawing = true; last = toCanvasPos(e); drawDot(last.x, last.y); canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (!drawing) return; const p = toCanvasPos(e); drawLine(last.x, last.y, p.x, p.y); last = p; });
+    window.addEventListener('pointerup', e => { drawing = false; last = null; try { canvas.releasePointerCapture(e.pointerId) } catch { }; });
+    function drawDot(x, y) { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+    function drawLine(x1, y1, x2, y2) { ctx.strokeStyle = '#111'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+    document.getElementById('clearBtn').onclick = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); log('Canvas cleared'); updateProbs([]); };
+
+    /* ============ Preprocessing ============ */
+    const SMALL = 28, INPUT_DIM = SMALL * SMALL;
+    function canvasToVector() {
+      const tmp = document.createElement('canvas'); tmp.width = SMALL; tmp.height = SMALL;
+      const tctx = tmp.getContext('2d'); tctx.fillStyle = '#fff'; tctx.fillRect(0, 0, SMALL, SMALL);
+      tctx.drawImage(canvas, 0, 0, SMALL, SMALL);
+      const img = tctx.getImageData(0, 0, SMALL, SMALL).data;
+      const v = new Array(INPUT_DIM);
+      for (let i = 0, p = 0; i < img.length; i += 4, p++) { const gray = (img[i] + img[i + 1] + img[i + 2]) / 3 / 255; v[p] = 1 - gray; }
+      return v;
+    }
+
+    /* ============ Tiny matrix helpers ============ */
+    function zeros(r, c) { const A = []; for (let i = 0; i < r; i++) A.push(new Array(c).fill(0)); return A; }
+    function randMatrix(r, c, scale = 1) { const A = []; for (let i = 0; i < r; i++) { const row = []; for (let j = 0; j < c; j++) row.push((Math.random() * 2 - 1) * scale); A.push(row); } return A; }
+    function matMul(A, B) { const n = A.length, m = A[0].length, p = B[0].length; const C = zeros(n, p); for (let i = 0; i < n; i++) { for (let k = 0; k < m; k++) { const aik = A[i][k]; for (let j = 0; j < p; j++) C[i][j] += aik * B[k][j]; } } return C; }
+    function addBiasRows(M, b) { return M.map(row => row.map((v, j) => v + b[j])); }
+    function transpose(A) { const r = A.length, c = A[0].length; const T = zeros(c, r); for (let i = 0; i < r; i++) for (let j = 0; j < c; j++) T[j][i] = A[i][j]; return T; }
+    function sumRows(M) { const out = new Array(M[0].length).fill(0); for (const r of M) for (let j = 0; j < out.length; j++) out[j] += r[j]; return out; }
+
+    /* ============ Activations ============ */
+    function relu(x) { return x > 0 ? x : 0; }
+    function reluPrime(z) { return z > 0 ? 1 : 0; }
+    function softmaxRow(row) { let m = -Infinity; for (const v of row) if (v > m) m = v; const ex = row.map(v => Math.exp(v - m)); const s = ex.reduce((a, b) => a + b, 0); return ex.map(v => v / s); }
+    function softmax(M) { return M.map(softmaxRow); }
+
+    /* ============ MLP ============ */
+    class MLP {
+      constructor(inputDim, h1, h2, outDim, lr = 0.08) {
+        this.sizes = [inputDim, h1, h2, outDim]; this.L = this.sizes.length - 1; this.lr = lr; this.W = []; this.b = [];
+        for (let l = 0; l < this.L; l++) { const inD = this.sizes[l], outD = this.sizes[l + 1]; const scale = Math.sqrt(2 / (inD + outD)); this.W.push(randMatrix(inD, outD, scale)); this.b.push(new Array(outD).fill(0)); }
+      }
+      forward(X) { let a = X.map(r => r.slice()), As = [a], Zs = []; for (let l = 0; l < this.L; l++) { const z = addBiasRows(matMul(a, this.W[l]), this.b[l]); Zs.push(z); a = (l === this.L - 1) ? softmax(z) : z.map(row => row.map(relu)); As.push(a); } return { As, Zs }; }
+      trainBatch(X, Y) {
+        const N = X.length; const { As, Zs } = this.forward(X); const gradW = this.W.map(w => zeros(w.length, w[0].length)), gradB = this.b.map(b => new Array(b.length).fill(0));
+        let delta = As[this.L].map((row, i) => row.map((v, j) => v - Y[i][j]));
+        for (let l = this.L - 1; l >= 0; l--) {
+          const aPrev = As[l]; const dW = matMul(transpose(aPrev), delta); const dB = sumRows(delta); gradW[l] = dW; gradB[l] = dB;
+          if (l > 0) { const WT = transpose(this.W[l]); let deltaPrev = matMul(delta, WT); const zPrev = Zs[l - 1]; deltaPrev = deltaPrev.map((row, i) => row.map((v, j) => v * reluPrime(zPrev[i][j]))); delta = deltaPrev; }
+        }
+        const scale = this.lr / N; for (let l = 0; l < this.L; l++) { for (let i = 0; i < this.W[l].length; i++) for (let j = 0; j < this.W[l][0].length; j++) this.W[l][i][j] -= scale * gradW[l][i][j]; for (let j = 0; j < this.b[l].length; j++) this.b[l][j] -= scale * gradB[l][j]; }
+      }
+      predictProbs(x) { return this.forward([x]).As[this.L][0]; }
+    }
+
+    /* ============ Dataset & Labels ============ */
+    const net = new MLP(INPUT_DIM, 128, 64, 3, 0.08);
+    let LABELS = ["cat", "dog", "bird"];
+    let labelToIndex = {}; LABELS.forEach((l, i) => labelToIndex[l] = i);
+    let dataset = []; let classCounts = LABELS.map(_ => 0);
+    const labelSelect = document.getElementById('labelSelect');
+
+    function getOrCreateLabelIndex(nameRaw) {
+      const name = (nameRaw || '').trim().toLowerCase(); if (!name) return null;
+      if (labelToIndex[name] !== undefined) return labelToIndex[name];
+      const idx = LABELS.length; LABELS.push(name); labelToIndex[name] = idx; classCounts[idx] = 0; expandOutputLayer(); return idx;
+    }
+    function expandOutputLayer() {
+      const oldOut = net.sizes[net.sizes.length - 1], newOut = LABELS.length; net.sizes[net.sizes.length - 1] = newOut;
+      const L = net.L - 1, inDim = net.W[L].length;
+      for (let i = 0; i < inDim; i++) { for (let k = 0; k < newOut - oldOut; k++) net.W[L][i].push((Math.random() * 2 - 1) * Math.sqrt(2 / (inDim + newOut))); }
+      for (let k = 0; k < newOut - oldOut; k++) net.b[L].push(0);
+      for (const item of dataset) { const yNew = new Array(newOut).fill(0); for (let j = 0; j < oldOut; j++) yNew[j] = item.y[j]; item.y = yNew; }
+    }
+    function oneHot(idx, C) { const v = new Array(C).fill(0); v[idx] = 1; return v; }
+    function updateLabelsUI() {
+      const list = LABELS.map((n, i) => `${n} (${classCounts[i] || 0})`).join(', ');
+      document.getElementById('labelsList').textContent = list || '(none)';
+      document.getElementById('exampleCount').textContent = dataset.length;
+      labelSelect.innerHTML = '';
+      LABELS.forEach((lbl, i) => { const opt = document.createElement('option'); opt.value = i; opt.textContent = lbl; labelSelect.appendChild(opt); });
+    }
+
+    /* ============ UI Actions ============ */
+    document.getElementById('addLabelBtn').onclick = () => {
+      const inputEl = document.getElementById('labelInput'); const label = inputEl.value.trim().toLowerCase(); if (!label) { log('No label entered'); return; }
+      const idx = getOrCreateLabelIndex(label); log(`Label "${LABELS[idx]}" added.`); inputEl.value = ''; updateLabelsUI();
+    };
+    document.getElementById('addBtn').onclick = () => {
+      const idx = parseInt(labelSelect.value); if (isNaN(idx)) { log('No label selected'); return; }
+      const x = canvasToVector(); const y = oneHot(idx, LABELS.length); dataset.push({ x, y }); classCounts[idx] = (classCounts[idx] || 0) + 1; updateLabelsUI();
+      log(`Added example as "${LABELS[idx]}". Total: ${dataset.length}`);
+    };
+    document.getElementById('trainBtn').onclick = () => {
+      if (dataset.length === 0) { log('No examples to train on'); return; }
+      const epochs = 12, batchSize = 16;
+      for (let ep = 0; ep < epochs; ep++) {
+        const idxs = Array.from({ length: dataset.length }, (_, i) => i);
+        for (let i = idxs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[idxs[i], idxs[j]] = [idxs[j], idxs[i]]; }
+        for (let b = 0; b < idxs.length; b += batchSize) { const batch = idxs.slice(b, b + batchSize); const X = batch.map(i => dataset[i].x); const Y = batch.map(i => dataset[i].y); net.trainBatch(X, Y); }
+        if ((ep + 1) % 3 === 0) log(`Epoch ${ep + 1}/${epochs} done`);
+      }
+      log('Training finished.');
+    };
+    document.getElementById('predictBtn').onclick = () => {
+      if (LABELS.length === 0) { log('No classes yet'); return; }
+      const x = canvasToVector(); const probs = net.predictProbs(x); showProbs(probs);
+      const best = probs.indexOf(Math.max(...probs)); log(`Prediction: ${LABELS[best]} (conf ${(probs[best] * 100).toFixed(1)}%)`);
+    };
+    document.getElementById('saveBtn').onclick = () => {
+      const payload = { net: { sizes: net.sizes, W: net.W, b: net.b, lr: net.lr }, labels: { LABELS, labelToIndex, classCounts }, dataset };
+      localStorage.setItem('mlp-onebtn', JSON.stringify(payload)); log('Saved model, labels, and dataset to localStorage');
+    };
+    document.getElementById('loadBtn').onclick = () => {
+      const s = localStorage.getItem('mlp-onebtn'); if (!s) { log('Nothing saved yet'); return; }
+      const obj = JSON.parse(s); LABELS = obj.labels.LABELS || []; labelToIndex = obj.labels.labelToIndex || {}; classCounts = obj.labels.classCounts || [];
+      net.sizes = obj.net.sizes; net.W = obj.net.W; net.b = obj.net.b; net.lr = obj.net.lr; dataset = obj.dataset || [];
+      updateLabelsUI(); log(`Loaded. Classes: [${LABELS.join(', ')}], examples: ${dataset.length}`);
+    };
+
+    /* ============ Helpers ============ */
+    function showProbs(probs) {
+      const wrap = document.getElementById('probs'); wrap.innerHTML = '';
+      if (probs.length === 0 || LABELS.length === 0) { wrap.innerHTML = '<small>No prediction yet</small>'; return; }
+      probs.forEach((p, i) => {
+        const row = document.createElement('div'); row.className = 'prog';
+        const name = document.createElement('div'); name.style.width = '80px'; name.textContent = LABELS[i];
+        const barW = document.createElement('div'); barW.className = 'bar';
+        const bar = document.createElement('i'); bar.style.width = Math.round(p * 100) + '%';
+        const pct = document.createElement('div'); pct.style.width = '40px'; pct.textContent = (p * 100).toFixed(0) + '%';
+        barW.appendChild(bar); row.appendChild(name); row.appendChild(barW); row.appendChild(pct); wrap.appendChild(row);
+      });
+    }
+    function log(msg) { const el = document.getElementById('log'); el.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>` + el.innerHTML; }
+    function updateProbs(probs) { showProbs(probs); }
+
+    /* init */
+    updateLabelsUI(); log('Ready — draw on the canvas. Add new labels using input, then add examples.');
+  </script>
+</body>
+
+</html>
