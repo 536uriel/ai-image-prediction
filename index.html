@@ -48,11 +48,12 @@
     }
 
     button {
-      padding: 8px 12px;
+      font-size: 1rem;
+      padding: 1rem;
       border-radius: 10px;
       border: 1px solid #ddd;
       background: #fff;
-      cursor: pointer
+      cursor: pointer;
     }
 
     button.primary {
@@ -103,9 +104,55 @@
       color: rgb(138, 130, 243);
     }
 
-    h3 a:hover{
+    h3 a:hover {
       text-decoration: none;
       color: rgb(174, 169, 243);
+    }
+
+    #exampleCount {
+      color: #5b9cff
+    }
+
+    #labelsList {
+      color: rgb(138, 130, 243)
+    }
+
+    #labelSelect {
+      width: 220px;
+      /* רוחב */
+      font-size: 18px;
+      /* גודל טקסט */
+      border: 2px solid #4a90e2;
+      /* גבול כחול */
+      border-radius: 12px;
+      /* פינות מעוגלות */
+      padding: 6px;
+      /* ריווח פנימי */
+      background-color: #f9f9f9;
+      /* צבע רקע */
+      color: #333;
+      /* צבע טקסט */
+      outline: none;
+      /* בלי קו כחול כשנבחר */
+      cursor: pointer;
+      /* ידית עכבר */
+    }
+
+    /* כשעומדים עם העכבר */
+    #labelSelect:hover {
+      border-color: #2d6cdf;
+      background-color: #eef5ff;
+    }
+
+    /* כשנבחר */
+    #labelSelect:focus {
+      border-color: #1a4fbf;
+      box-shadow: 0 0 6px rgba(74, 144, 226, 0.6);
+    }
+
+    #labelSelect option {
+      padding: 10px;
+      font-size: 18px;
     }
   </style>
 </head>
@@ -121,7 +168,7 @@
       <div class="controls">
         <select id="labelSelect"></select>
         <input type="text" id="labelInput" placeholder="New label..."
-          style="padding:6px; border-radius:8px; border:1px solid #ccc; width:100px;">
+          style="font-size:1rem;padding:1rem; border-radius:8px; border:1px solid #ccc; width:100px;">
         <button id="addLabelBtn">הוסף תווית</button>
         <button id="addBtn" class="primary">הוסף דוגמה</button>
         <button id="trainBtn">אימון חיזוי תמונות</button>
@@ -130,9 +177,9 @@
         <button id="saveBtn">שמור אימונים</button>
         <button id="loadBtn">טען אימונים</button>
       </div>
-      <div style="margin-top:6px; font-size:13px; color:#555">
-        Labels in dataset: <span id="labelsList">(none)</span><br />
-        Examples: <span id="exampleCount">0</span>
+      <div style="margin-top:6px; font-size:1.3rem; color:#555">
+        מספר הדוגמאות לכל תווית: <span id="labelsList">(none)</span><br />
+        סך הכל דוגמאות ביחד לאימון: <span id="exampleCount">0</span>
       </div>
     </div>
 
@@ -207,7 +254,7 @@
 
     /* ============ Dataset & Labels ============ */
     const net = new MLP(INPUT_DIM, 128, 64, 3, 0.08);
-    let LABELS = ["cat", "dog", "bird"];
+    let LABELS = ["חתול", "כלב", "ציפור"];
     let labelToIndex = {}; LABELS.forEach((l, i) => labelToIndex[l] = i);
     let dataset = []; let classCounts = LABELS.map(_ => 0);
     const labelSelect = document.getElementById('labelSelect');
