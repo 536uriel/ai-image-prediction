@@ -307,6 +307,7 @@
       }
       updateProbs([]);
       log("האימונים אופסו — הדוגמאות נשארו.");
+      alert("האימונים אופסו — הדוגמאות נשארו")
     };
 
     document.getElementById('trainBtn').onclick = () => {
@@ -320,6 +321,7 @@
         }
       }
       log('Training done');
+      alert("הדוגמאות הקיימות אומנו בהצלחה")
     };
     document.getElementById('predictBtn').onclick = () => {
       const x = canvasToVector(); const probs = net.predictProbs(x); updateProbs(probs);
